@@ -1497,7 +1497,8 @@ export default function App() {
             {logEntries.length === 0 && <div style={{ color:"#444", textAlign:"center", padding:40, fontSize:12 }}>Noch keine Einträge.</div>}
             {[...logEntries].reverse().map(log => {
               const ws = log.walking?.active ? calcWalkingSteps(log.walking.speed, log.walking.duration) : 0;
-              const rs = log.steps ? Math.max(0, parseInt(log.steps)-ws) : null;
+              const ss = log.sport?.active ? calcSportSteps(parseFloat(log.sport?.spm||0), log.sport?.duration) : 0;
+              const rs = log.steps ? Math.max(0, parseInt(log.steps) - ws - ss) : null;
               const tee = calcTEE(log, currentWeight, profile);
               const def = log.calories ? tee.total - parseInt(log.calories) : null;
               return (
