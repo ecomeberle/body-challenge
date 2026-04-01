@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { supabase } from "./supabase";
+import Auth from "./Auth";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, BarChart, Bar, ComposedChart, Area
@@ -137,6 +139,7 @@ function calcPlannedTDEE(sf) {
 
 // ══════════════════════════════════════════════════════════════════════════
 export default function App() {
+  const [user, setUser]         = useState(null);
   const [logs, setLogs]         = useState({});
   const [profile, setProfile]   = useState(null);
   const [tab, setTab]           = useState("dashboard");
@@ -152,14 +155,37 @@ export default function App() {
   const activeDate = editDate || today;
 
   useEffect(() => {
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) loadFromSupabase(session.user.id);
+      else setLoading(false);
+    });
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) loadFromSupabase(session.user.id);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function loadFromSupabase(userId) {
     try {
-      const p = localStorage.getItem("challenge-profile");
-      if (p) setProfile(JSON.parse(p));
-      const r = localStorage.getItem("challenge-logs-v2");
-      if (r) setLogs(JSON.parse(r));
+      const { data: profileRow } = await supabase
+        .from("profiles").select("data").eq("id", userId).single();
+      if (profileRow?.data) setProfile(profileRow.data);
+
+      const { data: logsRow } = await supabase
+        .from("logs").select("data").eq("id", userId).single();
+      if (logsRow?.data) setLogs(logsRow.data);
     } catch (e) {}
     setLoading(false);
-  }, []);
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setUser(null); setProfile(null); setLogs({});
+  }
 
   useEffect(() => {
     if (loading) return;
@@ -193,9 +219,12 @@ export default function App() {
     setRecovering(false);
   }
 
-  function saveProfile() {
-    try { localStorage.setItem("challenge-profile", JSON.stringify(setupForm)); } catch (e) {}
-    setProfile(setupForm);
+  async function saveProfile() {
+    const data = setupForm;
+    setProfile(data);
+    if (user) {
+      await supabase.from("profiles").upsert({ id: user.id, data });
+    }
   }
 
   function exportReport() {
@@ -313,10 +342,12 @@ export default function App() {
       document.body.removeChild(a); URL.revokeObjectURL(url);
     }, 400);
   }
-  function saveEntry() {
+  async function saveEntry() {
     const newLogs = { ...logs, [activeDate]: { ...form, date: activeDate } };
     setLogs(newLogs);
-    try { localStorage.setItem("challenge-logs-v2", JSON.stringify(newLogs)); } catch (e) {}
+    if (user) {
+      await supabase.from("logs").upsert({ id: user.id, data: newLogs, updated_at: new Date() });
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -589,6 +620,11 @@ export default function App() {
     /* ── Bars ── */
     .bar-track{background:#ffffff09;border-radius:4px}
   `;
+
+  // ══════════════════════════════════════════════════════════════════════
+  // AUTH GATE
+  // ══════════════════════════════════════════════════════════════════════
+  if (!user) return <Auth />;
 
   // ══════════════════════════════════════════════════════════════════════
   // SETUP SCREEN
@@ -901,7 +937,8 @@ export default function App() {
               <div className="bb" style={{ fontSize:28, color:daysLeft<=14?"#ff4444":"#f0f0f0" }}>{daysLeft}</div>
               <div style={{ fontSize:9, color:"#444", letterSpacing:2 }}>TAGE</div>
             </div>
-            <button onClick={() => { setSetupForm(profile); setProfile(null); }} style={{ background:"none", border:"1px solid #333", borderRadius:6, color:"#555", cursor:"pointer", fontSize:12, padding:"6px 8px" }} title="Einstellungen">⚙️</button>
+            <button onClick={() => { setSetupForm(profile); setProfile(null); }} style={{ background:"none", border:"1px solid #ffffff18", borderRadius:8, color:"#ffffff55", cursor:"pointer", fontSize:12, padding:"6px 8px" }} title="Einstellungen">⚙️</button>
+            <button onClick={handleLogout} style={{ background:"none", border:"1px solid #ff444433", borderRadius:8, color:"#ff444488", cursor:"pointer", fontFamily:"'Outfit',sans-serif", fontSize:10, padding:"6px 10px" }} title="Ausloggen">↪ Logout</button>
           </div>
         </div>
       </div>
@@ -1710,3 +1747,4 @@ export default function App() {
     </div>
   );
 }
+
